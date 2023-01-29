@@ -6,13 +6,15 @@ type internal RefCountingTaskCreator<'a>(create : CancellationToken -> Task<'a>)
     
     let mutable refCount = 0
     let mutable cache : option<Task<'a>> = None
-    let cancel = new CancellationTokenSource()
+    let mutable cancel : CancellationTokenSource = null
     
     member private x.RemoveRef() =
         lock x (fun () ->
             if refCount = 1 then
                 refCount <- 0
                 cancel.Cancel()
+                cancel.Dispose()
+                cancel <- null
                 cache <- None
             else
                 refCount <- refCount - 1
@@ -25,6 +27,7 @@ type internal RefCountingTaskCreator<'a>(create : CancellationToken -> Task<'a>)
                 refCount <- refCount + 1
                 CancelableTask(x.RemoveRef, cache)
             | None ->
+                cancel <- new CancellationTokenSource()
                 let task = create cancel.Token
                 cache <- Some task
                 refCount <- refCount + 1
@@ -131,6 +134,31 @@ module AsyncAVal =
                     cache.Value.New()
         } :> asyncaval<_>
 
+    let map2 (mapping : 'a -> 'b -> CancellationToken -> Task<'c>) (ca : asyncaval<'a>) (cb : asyncaval<'b>) =
+        let mutable cache : option<RefCountingTaskCreator<'c>> = None
+        { new AbstractVal<'c>() with
+            member x.Compute t =
+                if x.OutOfDate || Option.isNone cache then
+                    let ref =
+                        RefCountingTaskCreator(fun ct ->
+                            let ta = ca.GetValue t
+                            let tb = cb.GetValue t
+                            let s = ct.Register(fun () -> ta.Cancel(); tb.Cancel())
+                            task {
+                                try
+                                    let! va = ta.Task
+                                    let! vb = tb.Task
+                                    return! mapping va vb ct
+                                finally
+                                    s.Dispose()
+                            }    
+                        )
+                    cache <- Some ref
+                    ref.New()
+                else
+                    cache.Value.New()
+        } :> asyncaval<_>
+
     // untested!!!!
     let bind (mapping : 'a -> CancellationToken -> asyncaval<'b>) (value : asyncaval<'a>) =
         let mutable cache : option<_> = None
@@ -207,6 +235,14 @@ module AsyncAVal =
 [<EntryPoint>]
 let main argv = 
    
+    let l = obj()
+    let printfn fmt =
+        fmt |> Printf.kprintf (fun str ->
+            lock l (fun () ->
+                System.Console.WriteLine str
+            )
+        )
+    
     let input = cval 1000
     
     
@@ -242,7 +278,7 @@ let main argv =
             printfn "start b"
             task {
                 try
-                    do! Task.Delay(100, ct)
+                    do! Task.Delay(300, ct)
                     printfn "b done"
                     return time
                 with e ->
@@ -251,15 +287,42 @@ let main argv =
             }
         )
         
+    let c =
+        sleeper |> AsyncAVal.map (fun time ct ->
+            printfn "start c"
+            task {
+                try
+                    do! Task.Delay(200, ct)
+                    printfn "c done"
+                    return time
+                with e ->
+                    printfn "c stopped"
+                    return raise e
+            }
+        )
+        
+    let d = (a,b) ||> AsyncAVal.map2 (fun a b _ -> task { return a - b })
+        
+        
+        
     
     sleeper.GetValue(AdaptiveToken.Top).Task.Result |> printfn "result: %A"
     
     a.GetValue(AdaptiveToken.Top).Task.Result |> printfn "a: %A"
     b.GetValue(AdaptiveToken.Top).Task.Result |> printfn "b: %A"
+    c.GetValue(AdaptiveToken.Top).Task.Result |> printfn "c: %A"
+    d.GetValue(AdaptiveToken.Top).Task.Result |> printfn "d: %A"
     
     
     printfn "change"
     transact (fun () -> input.Value <- 500)
+    
+    let tc = c.GetValue(AdaptiveToken.Top)
+    let td = d.GetValue(AdaptiveToken.Top)
+    
+    tc.Cancel()
+    td.Task.Result |> printfn "d = %A"
+    
     
     printfn "eval tasks"
     let va = a.GetValue(AdaptiveToken.Top)
@@ -288,5 +351,7 @@ let main argv =
     try va.Task.Wait() with _ -> ()
     try vb.Task.Wait() with _ -> ()
     
+    let tc = c.GetValue(AdaptiveToken.Top)
+    printfn "c: %A" tc.Task.Result
     
     0
