@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "AsyncAdaptive", "AsyncAdaptive\AsyncAdaptive.fsproj", "{454D656E-7EBE-46A7-94EA-F15AA497D881}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{454D656E-7EBE-46A7-94EA-F15AA497D881}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{454D656E-7EBE-46A7-94EA-F15AA497D881}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{454D656E-7EBE-46A7-94EA-F15AA497D881}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{454D656E-7EBE-46A7-94EA-F15AA497D881}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
